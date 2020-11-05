@@ -1,0 +1,116 @@
+---
+title: "Exercise Classe Prediction Project"
+author: "SR"
+date: "11/5/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(caret)
+library(rattle)
+```
+
+## Data Processing
+```{r dataprep}
+rawdata <- read.csv("pml-training.csv")
+
+#First, the various possible predictor dims will be checked for missing values.
+#Just to be safe.
+missingStats <- numeric(length(names(rawdata)))
+
+for(i in 1:length(names(rawdata)))
+{
+  vari <- rawdata[,i]
+  if(sum(is.na(vari)) > 0)
+  {
+    missingStats[i] = (sum(is.na(vari))/length(rawdata[,1]))
+  }
+  else
+  {
+    missingStats[i] = (sum(vari == "")/length(rawdata[,1]))
+  }
+}
+
+missingStats
+#100 variables in this list show almost 98% missing (NA or blank) values.
+#The data set will be altered here to remove those variables given their
+#serious lack of completeness making them suspect at best.
+#Note: I checked to see if "not missing" was a good predictor for a classe value
+#considering converting all of these missing stats to boolean, but it was not.
+#To see this, remove all rows missing a given variable and count the classes.
+
+trainingdata <- rawdata[, missingStats < .9]
+```
+
+## EDA/Model Selection
+Now that we have loaded in and tidied up the training data, we will begin 
+considering the model development process. The first noteworthy fact is that our
+goal is classification into one of five (5) un-ordered categories, which means
+we mean we are limited in which methods to use.
+
+```{r eda}
+#First cut a couple of variables that cannot reasonably be seen as predictors for 
+#a useful model: Index, user name, time stamps, and the date-time of the record.
+#Many of these variables also do not make good future predictors so their
+#removal also helps make the model more useful in real usage.
+#This makes the notation for model functions easier.
+trainingdata_abbrv <- trainingdata[, -c(1:5)]
+#Turn one remaining char variable to logical that can be used as numeric
+trainingdata_abbrv$new_window <- trainingdata_abbrv$new_window == "yes"
+
+#First, a simple decision tree
+decisiontree <- train(classe ~ ., data = trainingdata_abbrv, method = "rpart")
+#How many classes did it predict correctly?
+sum(predict(decisiontree, trainingdata_abbrv) == trainingdata_abbrv$classe)
+#Improvised Confusion Matrix
+table(predict(decisiontree, trainingdata_abbrv), trainingdata_abbrv$classe)
+#Finally, a nice visualization of how the decision tree works since it possible.
+fancyRpartPlot(decisiontree$finalModel)
+#While this model is not yet sufficient to stand alone, it has allowed for reliable
+#identification of classe E, and to some extent A. The major failing, of
+#course being the lack of differentiation between B, C & D, failing to classify a
+#single observation as D.
+
+#One possible reason for this is the lack of a decision tree's capacity to see
+#interactions between variables. A linear discriminate analysis could help.
+lineardiscriminate <- train(classe ~ ., data = trainingdata_abbrv, method = "lda")
+#How many classes did it predict correctly?
+sum(predict(lineardiscriminate, trainingdata_abbrv) == trainingdata_abbrv$classe)
+#Improvised Confusion Matrix
+table(predict(lineardiscriminate, trainingdata_abbrv), trainingdata_abbrv$classe)
+#The lda model is more effective overall and less prejudiced against D, but it has
+#lost some of the capacity for identifying classe A seen in the decision tree.
+
+#After a little tinkering, it was discovered that random forest could be fit within
+#reasonable time by using only 10% of the training data chosen as follows.
+set.seed(2)
+rftrainMarks <- runif(length(trainingdata_abbrv$classe), 0, 1)>0.9
+randomForest <- train(classe ~ ., data = trainingdata_abbrv[rftrainMarks, ], 
+                           method = "rf", tunelength = 1)
+
+#Using only a tenth of the data also provides for a nice chance at model validation
+#since much of the data in the training set is not using in training the model
+
+#Accuracy on whole data set
+correct <- sum(predict(randomForest, trainingdata_abbrv)==trainingdata_abbrv$classe)
+acc_all <- correct/length(trainingdata_abbrv$classe)
+acc_all
+
+#For completeness/transparency, accuracy on unused training data
+correct <- sum(predict(randomForest, trainingdata_abbrv[!rftrainMarks, ])
+               ==trainingdata_abbrv[!rftrainMarks, ]$classe)
+acc_valid <- correct/length(trainingdata_abbrv$classe)
+acc_valid
+
+#At this point, the relative success of the random forest method was sufficient
+#to meet our externally set objective of an 80% accuracy by a solid margin.
+#(breaking the forth wall: simulated by the quiz for predicting those 20 test values)
+
+#Here some information about the model can be seen.
+print(randomForest$finalModel)
+```
+The random forest has about a `r round(acc_valid, 4)` accuracy rating on the remaining
+90% of the data on which it was not trained, which makes that a fairly good estimate
+for out-of-sample accuracy. \newline
