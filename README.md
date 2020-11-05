@@ -2,6 +2,9 @@
 For use in Coursera Data Science Specialization courses  
 <p>&nbsp;</p>
 
+#### Course 8 Project
+A link to view the html is it's proper form since I can't make github render it.
+https://htmlpreview.github.io/?https://github.com/ArchivistQ42/datasciencecoursera/blob/gh-pages/C8PML_Project.html
 
 #### Course 3 Project
 Project files:
